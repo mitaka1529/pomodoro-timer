@@ -1,0 +1,8 @@
+# 共通（PC でのシミュレーション実行にも必要）
+flask>=3.0
+pyyaml>=6.0
+
+# 実機（Raspberry Pi）でのみ追加インストール:
+#   RPi.GPIO       … 超音波センサー・リレー制御
+#   picamera2      … Pi カメラモジュール（OS のパッケージ推奨: sudo apt install python3-picamera2）
+#   opencv-python  … USB カメラを使う場合

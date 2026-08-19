@@ -1,0 +1,15 @@
+[Unit]
+Description=田んぼ自動水管理デバイス
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/rice-water-manager
+ExecStart=/usr/bin/python3 -m paddy.main --config /home/pi/rice-water-manager/config.yaml
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

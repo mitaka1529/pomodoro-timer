@@ -1,0 +1,48 @@
+# 田んぼ自動水管理デバイス 設定ファイル
+field_name: "田んぼ1"
+
+control:
+  interval_seconds: 60        # 水位の計測・判断の間隔（秒）
+  target_level_mm: 50         # 目標水位（mm）。stage_overrides があればそちらが優先
+  hysteresis_mm: 10           # 目標より hysteresis_mm 下回ったら開弁、目標に達したら閉弁
+  max_open_minutes: 120       # フェイルセーフ: 連続開弁がこれを超えたら強制閉弁+通知
+  min_level_alert_mm: 10      # これ未満で渇水アラート
+  max_level_alert_mm: 120     # これ超で冠水アラート（豪雨・排水詰まりの検知）
+
+# 生育ステージごとの上書き設定。start/end は "月-日"（両端を含む）。年をまたぐ指定も可。
+stage_overrides:
+  - { name: "活着期",   start: "05-10", end: "05-25", target_level_mm: 60 }
+  - { name: "分げつ期", start: "05-26", end: "06-20", target_level_mm: 40 }
+  - { name: "中干し",   start: "06-21", end: "07-01", target_level_mm: 0, valve_locked_closed: true }
+  - { name: "出穂期",   start: "07-25", end: "08-20", target_level_mm: 50 }
+  - { name: "落水",     start: "09-05", end: "10-31", target_level_mm: 0, valve_locked_closed: true }
+
+sensor:
+  kind: auto                  # hcsr04 | simulation | auto（GPIO が使えれば実機、無ければ疑似）
+  trigger_pin: 23             # BCM 番号
+  echo_pin: 24                # BCM 番号（5V センサーは分圧して 3.3V に落とすこと）
+  mount_height_mm: 300        # 田面からセンサーまでの高さ。水位 = 設置高 - 計測距離
+  samples: 5                  # 中央値を取るサンプル数（波・ノイズ対策）
+
+valve:
+  kind: auto                  # relay | simulation | auto
+  pin: 17                     # リレー IN の BCM 番号
+  active_low: true            # 一般的なリレーモジュールは LOW で ON
+
+camera:
+  kind: auto                  # picamera | opencv | simulation | auto | none
+  interval_minutes: 30        # 撮影間隔（分）。0 で自動撮影オフ
+  directory: data/photos
+  width: 1280
+  height: 720
+  opencv_index: 0             # USB カメラのデバイス番号
+
+notify:
+  webhook_url: ""             # 異常時に {"text": "..."} を POST する URL。空なら通知なし
+
+web:
+  host: 0.0.0.0
+  port: 8000
+
+storage:
+  db_path: data/paddy.db
