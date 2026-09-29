@@ -42,6 +42,21 @@ def glyph(c):
     if c == "°":
         pts = [(8 + 3 * math.cos(t / 8 * 2 * math.pi), -9 + 3 * math.sin(t / 8 * 2 * math.pi)) for t in range(9)]
         return list(zip(pts, pts[1:])), 14.0
+    def circ(cx, cy, r, n=24):
+        pts = [(cx + r * math.cos(t / n * 2 * math.pi), cy + r * math.sin(t / n * 2 * math.pi)) for t in range(n + 1)]
+        return list(zip(pts, pts[1:]))
+    if c == "◎":
+        return circ(11, -1.5, 10) + circ(11, -1.5, 5), 22.0
+    if c == "○":
+        return circ(11, -1.5, 10), 22.0
+    if c == "⊥":
+        return [((11, -12), (11, 9)), ((1, 9), (21, 9))], 22.0
+    if c == "∥":
+        return [((4, 9), (12, -12)), ((10, 9), (18, -12))], 22.0
+    if c == "⌖":
+        return circ(11, -1.5, 7) + [((0, -1.5), (22, -1.5)), ((11, -12.5), (11, 9.5))], 22.0
+    if c == "—":
+        return [((1, -1.5), (21, -1.5))], 22.0
     if not (32 <= ord(c) < 127):
         c = "?"
     if c == " ":
@@ -50,6 +65,17 @@ def glyph(c):
     bar = segs[-1]
     assert bar[0][0] == bar[1][0] and {bar[0][1], bar[1][1]} == {-16, 16}, (c, bar)
     return segs[:-1], bar[0][0] - 4
+
+
+GDT = str.maketrans({"r": "◎", "b": "⊥", "f": "∥", "j": "⌖", "u": "—", "e": "○", "n": "Ø"})
+
+
+def is_gdt(e):
+    try:
+        st = e.doc.styles.get(e.dxf.get("style", "Standard"))
+        return st is not None and "gdt" in (st.dxf.font or "").lower()
+    except Exception:
+        return False
 
 
 def decode(s):
@@ -84,6 +110,8 @@ def run_segments(s, x, y, h, wf, rot, p0):
 def text_segments(e):
     d = e.dxf
     s = decode(d.text)
+    if is_gdt(e):
+        s = s.translate(GDT)
     if not s.strip():
         return []
     h = d.height
@@ -171,7 +199,10 @@ def mtext_lines(text, h0):
 def mtext_segments(e):
     d = e.dxf
     h0 = d.char_height
-    lines = mtext_lines(decode(e.text), h0)
+    raw = decode(e.text)
+    if is_gdt(e):
+        raw = raw.translate(GDT) if "\\" not in raw else raw
+    lines = mtext_lines(raw, h0)
     rot = math.radians(d.get("rotation", 0.0))
     if d.hasattr("text_direction"):
         td = d.text_direction
@@ -225,17 +256,43 @@ def iter_texts(doc, entities, hidden_layers):
             yield e
 
 
+def find_page(doc, msp):
+    """Drawing sheet extents: a paper-format block if present, else the largest frame block."""
+    best = None
+    for e in msp.query("INSERT"):
+        b = bbox.extents([e])
+        if not b.has_data:
+            continue
+        r = (b.extmin.x, b.extmin.y, b.extmax.x, b.extmax.y)
+        area = (r[2] - r[0]) * (r[3] - r[1])
+        score = area * (2 if "format" in e.dxf.name.lower() else 1)
+        if (r[2] - r[0]) > 150 and (best is None or score > best[0]):
+            best = (score, r)
+    if best:
+        return best[1]
+    ext = bbox.extents(msp)
+    return (ext.extmin.x, ext.extmin.y, ext.extmax.x, ext.extmax.y)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src")
     ap.add_argument("out")
-    ap.add_argument("--paper", default="A3")
+    ap.add_argument("--paper", default="auto", help="auto | A3 | A4 | A3P | A4P")
+    ap.add_argument("--png", help="also write a PNG preview (150 dpi)")
     ap.add_argument("--text-lw", type=float, default=0.18, help="text stroke width in mm")
     a = ap.parse_args()
-    pw, ph = {"A3": (420, 297), "A4": (297, 210)}[a.paper]
-
     doc = ezdxf.readfile(a.src)
     msp = doc.modelspace()
+    page = find_page(doc, msp)
+    if a.paper == "auto":
+        w, h = page[2] - page[0], page[3] - page[1]
+        big = max(w, h) > 305
+        pw, ph = (420, 297) if big else (297, 210)
+        if h > w:
+            pw, ph = ph, pw
+    else:
+        pw, ph = {"A3": (420, 297), "A4": (297, 210), "A3P": (297, 420), "A4P": (210, 297)}[a.paper]
     hidden = {l.dxf.name for l in doc.layers if l.is_off() or l.is_frozen()}
 
     fig = plt.figure(figsize=(pw / 25.4, ph / 25.4))
@@ -258,12 +315,13 @@ def main():
     ax.add_collection(LineCollection(segs, colors="black", linewidths=a.text_lw * 72 / 25.4,
                                      capstyle="round", joinstyle="round"))
 
-    ext = bbox.extents(msp)
-    cx, cy = (ext.extmin.x + ext.extmax.x) / 2, (ext.extmin.y + ext.extmax.y) / 2
+    cx, cy = (page[0] + page[2]) / 2, (page[1] + page[3]) / 2
     ax.set_xlim(cx - pw / 2, cx + pw / 2)
     ax.set_ylim(cy - ph / 2, cy + ph / 2)
     ax.set_aspect("equal", adjustable="box")
     fig.savefig(a.out, facecolor="white")
+    if a.png:
+        fig.savefig(a.png, facecolor="white", dpi=150)
     print("saved", a.out)
 
 
