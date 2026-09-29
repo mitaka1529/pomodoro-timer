@@ -39,7 +39,22 @@ def fix_154_01_21310_3(doc):
     corr.dxf.insert = (xs, corr.dxf.insert.y, 0)
 
 
-FIXES = {"154-01-21310-3": fix_154_01_21310_3}
+def center_mtext_in_box(doc, text):
+    """Centre a boxed MTEXT title (the automatic box handling covers TEXT only)."""
+    from ezdxf import bbox
+    msp = doc.modelspace()
+    e = next(t for t in msp.query("MTEXT") if mtext_plain(t.text) == text)
+    p = e.dxf.insert
+    for pl in msp.query("LWPOLYLINE"):
+        b = bbox.extents([pl])
+        if b.extmin.x <= p.x <= b.extmax.x and b.extmin.y <= p.y <= b.extmax.y:
+            e.dxf.attachment_point = 5
+            e.dxf.insert = ((b.extmin.x + b.extmax.x) / 2, (b.extmin.y + b.extmax.y) / 2, 0)
+            return
+
+
+FIXES = {"154-01-21310-3": fix_154_01_21310_3,
+         "154-01-21310-2": lambda doc: center_mtext_in_box(doc, "METAL PART DRAWING")}
 
 
 def apply(name, doc):

@@ -70,6 +70,16 @@ def glyph(c):
 GDT = str.maketrans({"r": "◎", "b": "⊥", "f": "∥", "j": "⌖", "u": "—", "e": "○", "n": "Ø"})
 
 
+def width_scale(e):
+    """romans.shx is drawn at true Hershey width; txt.shx and other SHX fonts are narrower."""
+    try:
+        st = e.doc.styles.get(e.dxf.get("style", "Standard"))
+        f = (st.dxf.font or "").lower() if st is not None else ""
+    except Exception:
+        f = ""
+    return 1.0 if ("romans" in f or "gdt" in f) else 0.86
+
+
 def is_gdt(e):
     try:
         st = e.doc.styles.get(e.dxf.get("style", "Standard"))
@@ -115,7 +125,7 @@ def text_segments(e):
     if not s.strip():
         return []
     h = d.height
-    wf = d.get("width", 1.0) or 1.0
+    wf = (d.get("width", 1.0) or 1.0) * width_scale(e)
     rot = math.radians(d.get("rotation", 0.0))
     ha, va = d.get("halign", 0), d.get("valign", 0)
     adv = run_advance(s) * h / CAP
@@ -203,6 +213,8 @@ def mtext_segments(e):
     if is_gdt(e):
         raw = raw.translate(GDT) if "\\" not in raw else raw
     lines = mtext_lines(raw, h0)
+    ws = width_scale(e)
+    lines = [[(k, t_, hh, wff * ws) for k, t_, hh, wff in ln] for ln in lines]
     rot = math.radians(d.get("rotation", 0.0))
     if d.hasattr("text_direction"):
         td = d.text_direction

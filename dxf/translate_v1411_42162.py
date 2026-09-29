@@ -175,7 +175,7 @@ T("6632", "STOPPER", (273.9, 248.1), A.RIGHT)
 T("6634", "STOPPER", (270.6, 182.7), A.RIGHT)
 T("64E1", "P", (261.6, 196.9), h=4.0, wf=1.0)
 T("64E3", "Q", (251.7, 216.9), h=4.0, wf=1.0)
-T("660F", "(MOUNTING HOLE DIAMETER)", (316.3, 161.1), A.MIDDLE_CENTER)
+T("660F", "(MOUNTING HOLE DIA.)", (316.3, 161.1), A.MIDDLE_CENTER)
 
 # ---------------------------------------------------------------- maker mark note
 SYM_DX = 12.0

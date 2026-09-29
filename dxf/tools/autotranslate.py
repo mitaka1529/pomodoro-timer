@@ -418,8 +418,8 @@ class Fitter:
 
     def _find_rect(self, tx0, ty0, tx1, ty1):
         def ok(bx0, by0, bx1, by1):
-            return (bx0 <= tx0 + 1 and bx1 >= tx1 - 1 and 0 <= ty0 - by0 < 3.5 and 0 <= by1 - ty1 < 3.5
-                    and bx1 - bx0 <= (tx1 - tx0) + 12)
+            return (bx0 <= tx0 + 1 and bx1 >= tx1 - 1 and 0 <= ty0 - by0 < 6 and 0 <= by1 - ty1 < 6
+                    and bx1 - bx0 <= (tx1 - tx0) + 16)
         for pl in self.msp.query("LWPOLYLINE"):
             pts = [(round(x, 4), round(y, 4)) for x, y in pl.get_points("xy")]
             if len(pts) == 5 and pts[0] == pts[-1]:
@@ -564,18 +564,23 @@ class Fitter:
                 gapstr = " " * n
         if "{GAP}" in en:
             en = en.replace("{GAP}", gapstr or "    ")
+        for r in riders:
+            if r["kind"] == "sup":
+                k = en.rfind(r["token"]) + len(r["token"])
+                if k < len(en):
+                    en = en[:k] + "   " + en[k:].lstrip(" ")
         multiline_ok = (not is_mtext) and layout is not None and block_used and " " in en and "\\P" not in en and not riders
 
         def line_avail(yb, hh, first, strict=False):
             lo_pad = -0.25 if strict else 0.3
-            bl = blocking(self.scene, p, rot, yb + lo_pad, yb + hh + (0.25 if strict else 0), exclude)
+            bl = blocking(self.scene, p, rot, yb + lo_pad, yb + hh + (0.25 if strict else 0.3), exclude)
             seed = {"L": (start + 0.05, start + 0.3), "C": (cx - 0.15, cx + 0.15), "R": (ox1 - 0.3, ox1 - 0.05)}[mode]
             fi = free_interval(bl, *seed) if block_used else None
             if fi is None:
                 if not first:
                     return None
                 return (ox0 - 0.2, ox1 + 0.2, True)
-            return (fi[0] + 0.4, fi[1] - 0.4, False)
+            return (fi[0] + 0.7, fi[1] - 0.7, False)
 
         def span(fi, need):
             lo, hi = fi[0], fi[1]
@@ -937,6 +942,50 @@ def fix_two_line_cells(doc):
                 q.dxf.insert = (q.dxf.insert.x, base)
 
 
+def fix_remarks_pairs(doc):
+    """Remarks cells holding 'G17xxK' over 'T.P.Hs=..': shrink and centre both inside the row (skips struck ones)."""
+    msp = doc.modelspace()
+    sc = Scene(doc)
+    sc.walk(msp, None)
+    hsegs = [(min(a, c), max(a, c), b) for a, b, c, d, _ in sc.segs if abs(b - d) < 1e-3]
+    texts = list(msp.query("TEXT"))
+    vsegs = [(min(b, d), max(b, d), a) for a, b, c, d, _ in sc.segs if abs(a - c) < 1e-3]
+    pairs = ((r"^G\d+K$", r"^\(?T\.P\.Hs"), (r"^Y\d+$", r"^YAMANI"))
+    for t in texts:
+        pat = next((tp for tp, bp in pairs if re.match(bp, t.dxf.text)), None)
+        if pat is None:
+            continue
+        tx = t.dxf.insert.x
+        tops = [g for g in texts if re.match(pat, g.dxf.text) and 0 < g.dxf.insert.y - t.dxf.insert.y < 5 and abs(g.dxf.insert.x - tx) < 12]
+        if not tops:
+            continue
+        g = tops[0]
+        struck = [ln for ln in msp.query("LINE") if abs(ln.dxf.start.y - ln.dxf.end.y) < 1e-3
+                  and t.dxf.insert.y - 0.5 < ln.dxf.start.y < g.dxf.insert.y + 3 and min(ln.dxf.start.x, ln.dxf.end.x) < tx + 5 < max(ln.dxf.start.x, ln.dxf.end.x)]
+        if struck:
+            continue
+        ys = [y for x0, x1, y in hsegs if x0 < tx + 3 < x1]
+        above = min([y for y in ys if y > g.dxf.insert.y], default=None)
+        below = max([y for y in ys if y < t.dxf.insert.y + 0.5], default=None)
+        if above is None or below is None or above - below > 9:
+            continue
+        mid = (above + below) / 2
+        h = min(1.8, (above - below - 1.4) / 2.3)
+        A_ = ezdxf.enums.TextEntityAlignment
+        xs = sorted(x for y0_, y1_, x in vsegs if y0_ < mid < y1_)
+        left = max([x for x in xs if x < tx + 1], default=None)
+        right = min([x for x in xs if x > tx + 3], default=None)
+        cell_c = (left + right) / 2 if left is not None and right is not None and right - left < 40 else None
+        for q, base in ((g, mid + 0.35), (t, mid - 0.35 - h)):
+            p0 = q.dxf.align_point if q.dxf.halign else None
+            cx = (q.dxf.insert.x + tw(q.dxf.text, q.dxf.height) * (q.dxf.width or 1) / 2) if not q.dxf.halign else (p0.x if q.dxf.halign != 5 else (q.dxf.insert.x + p0.x) / 2)
+            maxw = (right - left - 1.0) if cell_c is not None else 19.0
+            cx = cell_c if cell_c is not None else cx
+            wf = min(WF, maxw / tw(q.dxf.text, h))
+            q.dxf.height, q.dxf.width, q.dxf.style = h, wf, ST
+            q.set_placement((cx, base), align=A_.CENTER)
+
+
 def pair_stacked(doc):
     """Title-block labels written vertically as separate characters (名/称, 品/番) -> one rotated label."""
     for b in list(doc.blocks) + [doc.modelspace()]:
@@ -994,6 +1043,7 @@ def main():
     f = Fitter(doc)
     f.run()
     fix_two_line_cells(doc)
+    fix_remarks_pairs(doc)
     import drawing_fixes
     rename_japanese_names(doc)
     drawing_fixes.apply(re.sub(r"_EN$", "", out.rsplit("/", 1)[-1].rsplit(".", 1)[0]), doc)
