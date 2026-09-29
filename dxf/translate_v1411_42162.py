@@ -1,7 +1,6 @@
 import re, sys
 import ezdxf
 from ezdxf.enums import TextEntityAlignment as A
-from ezdxf.fonts import fonts
 
 SRC = sys.argv[1]
 OUT = sys.argv[2] if len(sys.argv) > 2 else "V1411-42162_EN.dxf"
@@ -9,18 +8,24 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else "V1411-42162_EN.dxf"
 doc = ezdxf.readfile(SRC)
 msp = doc.modelspace()
 db = doc.entitydb
-ST = "ARIAL_EN"
-doc.styles.add(ST, font="arial.ttf")
+ST = "ROMANS_EN"
+doc.styles.add(ST, font="romans.shx")
 
-WF = 0.85          # default width factor for all English text
+WF = 0.80          # default width factor for all English text
 _F = {}
+
+
+# advance widths of romans.shx (Hershey simplex), in units of cap height = 21
+_HW = dict(zip("ABCDEFGHIJKLMNOPQRSTUVWXYZ", [18, 21, 21, 21, 19, 18, 21, 22, 8, 16, 21, 17, 24, 22, 22, 21, 22, 21, 20, 16, 22, 18, 24, 20, 18, 20]))
+_HW.update(dict(zip("abcdefghijklmnopqrstuvwxyz", [19, 19, 18, 19, 18, 12, 19, 19, 8, 10, 17, 8, 30, 19, 19, 19, 19, 13, 17, 12, 19, 16, 22, 17, 16, 17])))
+_HW.update({c: 20 for c in "0123456789"})
+_HW.update({" ": 16, ".": 10, ",": 10, ":": 10, ";": 10, "(": 14, ")": 14, "-": 26, "/": 22, "+": 26,
+            "±": 26, "Ø": 22, "%": 24, "*": 16, "'": 10, "=": 26, "\u00b5": 19})
 
 
 def tw(s, h):
     s = s.replace("%%p", "±").replace("%%P", "±").replace("%%c", "Ø").replace("%%C", "Ø")
-    if h not in _F:
-        _F[h] = fonts.make_font("arial.ttf", cap_height=h)
-    return _F[h].text_width(s)
+    return sum(_HW.get(c, 22) for c in s) / 21.0 * h * 1.03
 
 
 def fit(s, h, maxw, wf=WF, minwf=0.6, minh=2.0):
