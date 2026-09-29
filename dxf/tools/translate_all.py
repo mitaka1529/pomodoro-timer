@@ -24,6 +24,34 @@ import autotranslate as A  # noqa: E402
 import check_overlaps as C  # noqa: E402
 
 
+HINT_EN = {"取消線の可能性": "strike-through?", "罫線/下線の可能性": "ruled line / underline?", "線と交差": "crosses a line",
+           "文字の重なり": "text overlaps text", "同じ文字の重複の可能性": "duplicated text?"}
+
+
+def build_review_pdf(review, names):
+    """One PDF with every contact image (captioned) and the sheet tiles, easy to upload to a chat AI."""
+    from PIL import Image, ImageDraw
+    pages = []
+
+    def page(img, caption):
+        img = img.convert("RGB")
+        s = min(1.0, 1600 / img.width)
+        img = img.resize((max(1, int(img.width * s)), max(1, int(img.height * s))))
+        out = Image.new("RGB", (max(img.width, 900), img.height + 60), "white")
+        out.paste(img, (0, 60))
+        ImageDraw.Draw(out).text((10, 20), caption, fill="black")
+        pages.append(out)
+    for name in names:
+        d = review / name
+        issues = json.loads((d / "issues.json").read_text(encoding="utf-8"))
+        for n, it in enumerate(issues, 1):
+            page(Image.open(d / it["image"]), f"{name}  issue {n}: {HINT_EN.get(it['hint'], it['hint'])}")
+        for t in sorted(d.glob("tile_*.png")):
+            page(Image.open(t), f"{name}  sheet part {t.stem.split('_')[1]}")
+    if pages:
+        pages[0].save(review / "REVIEW.pdf", save_all=True, append_images=pages[1:], resolution=150)
+
+
 def main():
     if len(sys.argv) != 3:
         print(__doc__)
@@ -75,6 +103,8 @@ def main():
         report.append("")
         print(f"{name}: {len(issues)} contact candidate(s)")
     (review / "REPORT.md").write_text("\n".join(report), encoding="utf-8")
+    (review / "REPORT.txt").write_text("\n".join(report), encoding="utf-8-sig")
+    build_review_pdf(review, [f.stem for f in files])
     print(f"done -> {out_dir}  (review: {review / 'REPORT.md'})")
 
 

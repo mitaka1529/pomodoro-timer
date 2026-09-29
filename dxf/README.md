@@ -30,7 +30,11 @@ python dxf\tools\translate_all.py 入力フォルダ 出力フォルダ
 2. その行を `dxf\tools\glossary.csv` に追記する（**日本語キーは変えずにそのままコピー**）
 3. もう一度実行する
 
-## Copilot（エージェント）で使う
+## Microsoft 365 Copilot で使う
+`dxf/copilot365/エージェント設定.md` の手順でエージェントを作ります（指示文は `dxf/copilot365/指示.txt` をそのまま貼り付け）。
+DXF・PDFの作成はPCで行い、未登録語の英訳（`missing_terms.csv`）と変換結果の確認（`review/REPORT.txt` と `review/REVIEW.pdf`）をエージェントに任せます。
+
+## GitHub Copilot（VS Code のエージェント）で使う
 VS Code の Copilot Chat をエージェントモードにして、次のどちらかで実行します。
 - チャットで `/dxf-translate` と入力（`.github/prompts/dxf-translate.prompt.md`）
 - エージェントの選択で `dxf-translator` を選び、「このフォルダの図面を英訳して」と依頼（`.github/agents/dxf-translator.agent.md`）
