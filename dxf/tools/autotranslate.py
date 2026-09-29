@@ -1,8 +1,9 @@
 """Translate the Japanese text of a DXF drawing to English and fit it into the free
 space around each original text (no overlaps with geometry or other text).
 
-usage: python autotranslate.py IN.dxf OUT.dxf REPORT.json
-Needs glossary.py (dict G: normalized Japanese -> English) next to this file.
+usage: python autotranslate.py IN.dxf OUT.dxf REPORT.json [--missing missing_terms.csv]
+Translations come from glossary.csv next to this file. If any Japanese text has no
+entry, nothing is written: the missing keys are appended to missing_terms.csv (exit 2).
 """
 import json
 import math
@@ -1035,9 +1036,45 @@ def rename_japanese_names(doc):
                 pass
 
 
-def main():
-    src, out, rep = sys.argv[1:4]
+def find_missing(doc):
+    """Japanese strings whose normalized key is not in the glossary -> {key: example original}."""
+    missing = {}
+    for e in doc.entitydb.values():
+        t = e.dxftype()
+        if t == "MTEXT":
+            s = e.text
+        elif t in ("TEXT", "ATTRIB", "ATTDEF", "DIMENSION"):
+            s = e.dxf.get("text", "")
+        else:
+            continue
+        n = norm(s) if s else ""
+        if n and JP.search(n) and n not in G:
+            missing.setdefault(n, s)
+    return missing
+
+
+def write_missing(missing, path, drawing=""):
+    import csv
+    from pathlib import Path
+    new = not Path(path).exists()
+    with open(path, "a", encoding="utf-8-sig" if new else "utf-8", newline="") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(["日本語キー", "英語", "備考", "図面", "元の文字列"])
+        for k, s in missing.items():
+            w.writerow([k, "", "", drawing, s])
+
+
+def translate_file(src, out, report, missing_csv=None):
+    """Returns 0 on success, 2 when glossary terms are missing (nothing written)."""
+    from pathlib import Path
     doc = ezdxf.readfile(src)
+    missing = find_missing(doc)
+    if missing:
+        if missing_csv:
+            write_missing(missing, missing_csv, Path(src).stem)
+        print(f"{src}: {len(missing)} term(s) missing from glossary.csv")
+        return 2
     pair_stacked(doc)
     tol_tables(doc)
     f = Fitter(doc)
@@ -1046,11 +1083,23 @@ def main():
     fix_remarks_pairs(doc)
     import drawing_fixes
     rename_japanese_names(doc)
-    drawing_fixes.apply(re.sub(r"_EN$", "", out.rsplit("/", 1)[-1].rsplit(".", 1)[0]), doc)
+    drawing_fixes.apply(re.sub(r"_EN$", "", Path(out).stem), doc)
     doc.saveas(out)
-    json.dump(f.report, open(rep, "w"), ensure_ascii=False, indent=1)
+    json.dump(f.report, open(report, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     rv = [r for r in f.report if "REVIEW" in r["how"] or "no free" in r["how"]]
     print(f"{out}: {len(f.report)} texts, {len(rv)} need review")
+    return 0
+
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("src")
+    ap.add_argument("out")
+    ap.add_argument("report")
+    ap.add_argument("--missing", default="missing_terms.csv", help="CSV to append untranslated terms to")
+    a = ap.parse_args()
+    sys.exit(translate_file(a.src, a.out, a.report, a.missing))
 
 
 if __name__ == "__main__":
